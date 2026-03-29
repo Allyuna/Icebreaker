@@ -10,6 +10,7 @@ import {
   confirmMatch,
   type Player,
 } from "@/app/lib/store";
+import { useLang } from "@/app/lib/LangContext";
 
 export default function ConfirmPage() {
   return (
@@ -26,6 +27,7 @@ function ConfirmInner() {
   const myCode = searchParams.get("myCode") ?? "";
   const theirCode = searchParams.get("theirCode") ?? "";
   const room = searchParams.get("room") ?? "";
+  const { t } = useLang();
 
   const [me, setMe] = useState<Player | null>(null);
   const [them, setThem] = useState<Player | null>(null);
@@ -71,9 +73,9 @@ function ConfirmInner() {
   if (notFound) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
-        <p className="text-red-500">Joueur introuvable.</p>
+        <p className="text-red-500">{t.confirm_notfound}</p>
         <Link href={`/find?myCode=${myCode}&room=${room}`} className="underline text-sm">
-          ← Réessayer
+          {t.confirm_retry}
         </Link>
       </main>
     );
@@ -82,34 +84,34 @@ function ConfirmInner() {
   if (!me || !them) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center">
-        <p className="text-gray-400">Chargement…</p>
+        <p className="text-gray-400">{t.confirm_loading}</p>
       </main>
     );
   }
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
-      <h1 className="text-3xl font-bold text-center">Est-ce votre moitié ?</h1>
+      <h1 className="text-3xl font-bold text-center">{t.confirm_title}</h1>
 
       <div className="flex gap-4 w-full max-w-sm">
         <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
-          <p className="text-xs text-gray-400 uppercase tracking-widest">Toi</p>
+          <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_you}</p>
           <p className="font-bold text-lg">{me.name}</p>
           <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{myWord}</p>
         </div>
         <div className="flex items-center justify-center text-3xl text-gray-300">+</div>
         <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
-          <p className="text-xs text-gray-400 uppercase tracking-widest">Eux</p>
+          <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_them}</p>
           <p className="font-bold text-lg">{them.name}</p>
           <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{theirWord}</p>
         </div>
       </div>
 
-      <p className="text-center text-gray-500 text-sm">Ces deux moitiés vont-elles ensemble ?</p>
+      <p className="text-center text-gray-500 text-sm">{t.confirm_question}</p>
 
       {wrongMatch && (
         <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm text-center w-full max-w-xs">
-          ❌ Ce n&apos;est pas la bonne moitié ! Continue à chercher.
+          {t.confirm_wrong}
         </div>
       )}
 
@@ -118,18 +120,18 @@ function ConfirmInner() {
           onClick={handleYes}
           className="flex-1 bg-green-500 text-white rounded-xl py-4 text-xl font-bold hover:bg-green-600 active:scale-95 transition"
         >
-          ✓ Oui !
+          {t.confirm_yes}
         </button>
         <button
           onClick={handleNo}
           className="flex-1 bg-red-100 text-red-600 rounded-xl py-4 text-xl font-bold hover:bg-red-200 active:scale-95 transition"
         >
-          ✗ Non
+          {t.confirm_no}
         </button>
       </div>
 
       <Link href={`/mission?code=${myCode}&room=${room}`} className="text-sm text-gray-400 underline">
-        ← Retour à ma mission
+        {t.confirm_back}
       </Link>
     </main>
   );

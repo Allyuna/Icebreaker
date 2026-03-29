@@ -6,6 +6,7 @@ import {
   type GameState,
 } from "@/app/lib/store";
 import { loadRoom, saveRoom, subscribeRoom } from "@/app/lib/db";
+import { useLang } from "@/app/lib/LangContext";
 
 // ─── Game modes registry ──────────────────────────────────────────────────────
 // Add new modes here when they are ready. Only 'its-a-match' is active for now.
@@ -65,6 +66,7 @@ export default function AdminPage() {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
+  const { t, toggleLang } = useLang();
 
   const [roomCode, setRoomCode] = useState<string>("");
   const [roomInput, setRoomInput] = useState("");
@@ -281,7 +283,13 @@ export default function AdminPage() {
   // ── PIN gate ──────────────────────────────────────────────────────────────────
   if (!pinUnlocked) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 max-w-xs mx-auto">
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 max-w-xs mx-auto relative">
+        <button
+          onClick={toggleLang}
+          className="absolute top-4 right-4 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 active:scale-95 transition"
+        >
+          {t.lang_toggle}
+        </button>
         <div className="text-center">
           <h1 className="text-2xl font-bold">Maître du jeu</h1>
           <p className="text-gray-400 text-sm mt-1">Entrez le code d&apos;accès pour continuer.</p>
@@ -312,7 +320,13 @@ export default function AdminPage() {
   // ── Room selector screen ──────────────────────────────────────────────────────
   if (!roomCode) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6 max-w-sm mx-auto">
+      <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6 max-w-sm mx-auto relative">
+        <button
+          onClick={toggleLang}
+          className="absolute top-4 right-4 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 active:scale-95 transition"
+        >
+          {t.lang_toggle}
+        </button>
         <h1 className="text-2xl font-bold text-center">Admin — Maître du jeu</h1>
 
         <button
@@ -357,9 +371,17 @@ export default function AdminPage() {
           <h1 className="text-2xl font-bold">Admin — Maître du jeu</h1>
           <p className="text-xs text-gray-400 font-mono mt-1">Salle : {roomCode}</p>
         </div>
-        <span className="text-sm font-medium px-3 py-1 rounded-full bg-gray-100">
-          {statusLabel[state.status]}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleLang}
+            className="text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 active:scale-95 transition"
+          >
+            {t.lang_toggle}
+          </button>
+          <span className="text-sm font-medium px-3 py-1 rounded-full bg-gray-100">
+            {statusLabel[state.status]}
+          </span>
+        </div>
       </div>
 
       {/* Join URL */}

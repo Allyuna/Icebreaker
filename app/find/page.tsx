@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadRoom } from "@/app/lib/db";
 import type { IScannerControls } from "@zxing/browser";
+import { useLang } from "@/app/lib/LangContext";
 
 export default function FindPage() {
   return (
@@ -19,6 +20,7 @@ function FindInner() {
   const router = useRouter();
   const myCode = searchParams.get("myCode") ?? "";
   const room = searchParams.get("room") ?? "";
+  const { t } = useLang();
 
   const [manualCode, setManualCode] = useState("");
   const [error, setError] = useState("");
@@ -59,11 +61,11 @@ function FindInner() {
           controlsRef.current = null;
           setScanning(false);
           if (!/^\d{4}$/.test(code)) {
-            setError("QR code invalide — ce n'est pas un code joueur.");
+            setError(t.find_err_invalid_qr);
             return;
           }
           if (code === myCode) {
-            setError("Tu ne peux pas te matcher avec toi-même !");
+            setError(t.find_err_self);
             return;
           }
           router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
@@ -72,7 +74,7 @@ function FindInner() {
       controlsRef.current = controls;
     } catch {
       setScanning(false);
-      setError("Scan annulé ou caméra inaccessible.");
+      setError(t.find_err_camera);
     }
   }
 
@@ -87,11 +89,11 @@ function FindInner() {
     setError("");
     const code = manualCode.trim();
     if (!/^\d{4}$/.test(code)) {
-      setError("Le code doit être composé de 4 chiffres.");
+      setError(t.find_err_digits);
       return;
     }
     if (code === myCode) {
-      setError("Tu ne peux pas te matcher avec toi-même !");
+      setError(t.find_err_self);
       return;
     }
     router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
@@ -100,10 +102,8 @@ function FindInner() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
       <div className="text-center">
-        <h1 className="text-3xl font-bold">Valider un match</h1>
-        <p className="text-gray-500 mt-2">
-          Scanne le QR code ou entre le code à 4 chiffres.
-        </p>
+        <h1 className="text-3xl font-bold">{t.find_title}</h1>
+        <p className="text-gray-500 mt-2">{t.find_sub}</p>
       </div>
 
       {/* QR Scanner */}
@@ -118,7 +118,7 @@ function FindInner() {
             onClick={stopScanner}
             className="text-sm text-gray-500 underline"
           >
-            Annuler le scan
+            {t.find_stop}
           </button>
         </div>
       ) : (
@@ -127,13 +127,13 @@ function FindInner() {
           className="flex items-center gap-2 text-white rounded-xl px-6 py-4 text-lg font-semibold active:scale-95 transition w-full max-w-xs justify-center"
           style={{ backgroundColor: accent }}
         >
-          📷 Scanner un QR code
+          {t.find_scan}
         </button>
       )}
 
       <div className="flex items-center gap-3 w-full max-w-xs">
         <div className="flex-1 h-px bg-gray-200" />
-        <span className="text-gray-400 text-sm">ou</span>
+        <span className="text-gray-400 text-sm">{t.find_or}</span>
         <div className="flex-1 h-px bg-gray-200" />
       </div>
 
@@ -155,7 +155,7 @@ function FindInner() {
           className="text-white rounded-lg px-4 py-3 text-lg font-semibold active:scale-95 transition"
           style={{ backgroundColor: accent }}
         >
-          Confirmer →
+          {t.find_confirm}
         </button>
       </form>
 
@@ -163,7 +163,7 @@ function FindInner() {
         href={`/mission?code=${myCode}&room=${room}`}
         className="text-sm text-gray-400 underline"
       >
-        ← Retour à ma mission
+        {t.find_back}
       </Link>
     </main>
   );
