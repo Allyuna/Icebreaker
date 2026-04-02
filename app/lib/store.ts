@@ -477,9 +477,10 @@ export function advanceATTrial(state: GameState, now: number = Date.now()): Game
       return { ...p, suspicionVoters: [] };
     });
 
+    const totalTraitors = players.filter((p) => p.role === "traitor").length;
     const aliveTraitors = players.filter((p) => p.alive && p.role === "traitor").length;
     let winnerSide = state.winnerSide ?? null;
-    if (aliveTraitors === 0) winnerSide = "agents";
+    if (totalTraitors > 0 && aliveTraitors === 0) winnerSide = "agents";
 
     return {
       ...state,

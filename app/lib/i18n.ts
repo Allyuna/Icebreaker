@@ -151,6 +151,11 @@ const fr = {
   at_admin_stats_alive: "En vie",
   at_admin_stats_traitors: "Traîtres en vie",
   at_admin_stats_progress: "Progression",
+  // ─── Scratch card ───────────────────────────────────────────────────────────
+  at_scratch_hint: "Grattez pour révéler votre rôle 🪙",
+  at_scratch_memorize: "Mémorisez bien — votre rôle ne sera plus affiché !",
+  at_scratch_done: "Commencer à jouer 🕵️",
+  at_peek_role: "👁️ Voir mon rôle",
 };
 
 const en: typeof fr = {
@@ -297,6 +302,11 @@ const en: typeof fr = {
   at_admin_stats_alive: "Alive",
   at_admin_stats_traitors: "Traitors alive",
   at_admin_stats_progress: "Progress",
+  // ─── Scratch card ───────────────────────────────────────────────────────────
+  at_scratch_hint: "Scratch to reveal your role 🪙",
+  at_scratch_memorize: "Memorise it — your role won't be shown again!",
+  at_scratch_done: "Start playing 🕵️",
+  at_peek_role: "👁️ See my role",
 };
 
 export const translations: Record<Lang, typeof fr> = { fr, en };

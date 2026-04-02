@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
@@ -20,6 +20,7 @@ import {
   type ATGhostActionType,
 } from "@/app/lib/store";
 import { useLang } from "@/app/lib/LangContext";
+import type { Translations } from "@/app/lib/i18n";
 
 export default function ATHubPage() {
   return (
@@ -29,21 +30,164 @@ export default function ATHubPage() {
   );
 }
 
-// ─── Progress bar component ───────────────────────────────────────────────────
+// ─── Scratch card overlay ─────────────────────────────────────────────────────
 
-function ProgressBar({ value, accent }: { value: number; accent: string }) {
-  const color =
-    value > 65 ? "#22c55e" : value > 35 ? "#f59e0b" : "#ef4444";
+function ScratchCardScreen({
+  player,
+  fellowTraitors,
+  t,
+  onDone,
+}: {
+  player: Player;
+  fellowTraitors: Player[];
+  t: Translations;
+  onDone: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coverageDone = useRef(false);
+  const [showContinue, setShowContinue] = useState(false);
+  const isTraitor = player.role === "traitor";
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const W = Math.round(rect.width) || window.innerWidth;
+    const H = Math.round(rect.height) || window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#94a3b8";
+    ctx.textAlign = "center";
+    const fontSize = Math.max(13, Math.round(W * 0.042));
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.fillText(t.at_scratch_hint, W / 2, H / 2 - 14);
+
+    const brushR = Math.max(24, Math.round(W * 0.1));
+    let scratchCount = 0;
+    let drawing = false;
+
+    function scratchAt(x: number, y: number) {
+      if (coverageDone.current) return;
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath();
+      ctx.arc(x, y, brushR, 0, Math.PI * 2);
+      ctx.fill();
+      scratchCount++;
+      if (scratchCount % 4 !== 0) return;
+      const d = ctx.getImageData(0, 0, W, H).data;
+      let transparent = 0;
+      for (let i = 3; i < d.length; i += 64) {
+        if (d[i] < 128) transparent++;
+      }
+      if (transparent / (d.length / 64) > 0.5) {
+        coverageDone.current = true;
+        setShowContinue(true);
+      }
+    }
+
+    const onTS = (e: TouchEvent) => {
+      e.preventDefault(); drawing = true;
+      const r = canvas.getBoundingClientRect();
+      for (let i = 0; i < e.touches.length; i++)
+        scratchAt(e.touches[i].clientX - r.left, e.touches[i].clientY - r.top);
+    };
+    const onTM = (e: TouchEvent) => {
+      e.preventDefault(); if (!drawing) return;
+      const r = canvas.getBoundingClientRect();
+      for (let i = 0; i < e.touches.length; i++)
+        scratchAt(e.touches[i].clientX - r.left, e.touches[i].clientY - r.top);
+    };
+    const onTE = () => { drawing = false; };
+    const onMD = (e: MouseEvent) => {
+      drawing = true;
+      const r = canvas.getBoundingClientRect();
+      scratchAt(e.clientX - r.left, e.clientY - r.top);
+    };
+    const onMM = (e: MouseEvent) => {
+      if (!drawing) return;
+      const r = canvas.getBoundingClientRect();
+      scratchAt(e.clientX - r.left, e.clientY - r.top);
+    };
+    const onMU = () => { drawing = false; };
+
+    canvas.addEventListener("touchstart", onTS, { passive: false });
+    canvas.addEventListener("touchmove", onTM, { passive: false });
+    canvas.addEventListener("touchend", onTE);
+    canvas.addEventListener("mousedown", onMD);
+    canvas.addEventListener("mousemove", onMM);
+    canvas.addEventListener("mouseup", onMU);
+    canvas.addEventListener("mouseleave", onMU);
+    return () => {
+      canvas.removeEventListener("touchstart", onTS);
+      canvas.removeEventListener("touchmove", onTM);
+      canvas.removeEventListener("touchend", onTE);
+      canvas.removeEventListener("mousedown", onMD);
+      canvas.removeEventListener("mousemove", onMM);
+      canvas.removeEventListener("mouseup", onMU);
+      canvas.removeEventListener("mouseleave", onMU);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 overflow-hidden"
+      style={{ backgroundColor: isTraitor ? "#dc2626" : "#1d4ed8" }}
+    >
+      {/* Role content visible underneath the scratch layer */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 text-white text-center pointer-events-none select-none">
+        <p className="text-sm uppercase tracking-widest opacity-60">{t.at_role_label}</p>
+        <p className="text-7xl font-black tracking-wider">
+          {isTraitor ? t.at_role_traitor : t.at_role_agent}
+        </p>
+        <p className="text-sm opacity-80 max-w-xs leading-relaxed">
+          {isTraitor ? t.at_role_hint_traitor : t.at_role_hint_agent}
+        </p>
+        {isTraitor && fellowTraitors.length > 0 && (
+          <div className="bg-white/20 rounded-2xl p-4 w-full max-w-xs text-left mt-2">
+            <p className="text-xs uppercase tracking-widest opacity-60 mb-2">{t.at_fellow_traitors}</p>
+            {fellowTraitors.map((fp) => (
+              <p key={fp.code} className="font-bold text-xl">{fp.name}</p>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Canvas scratch layer */}
+      {!showContinue ? (
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full"
+          style={{ touchAction: "none", cursor: "crosshair" }}
+        />
+      ) : (
+        <div className="absolute bottom-12 inset-x-0 flex flex-col items-center gap-3 px-8 pointer-events-auto">
+          <p className="text-white/70 text-sm text-center max-w-xs">{t.at_scratch_memorize}</p>
+          <button
+            onClick={onDone}
+            className="bg-white text-gray-900 rounded-2xl px-10 py-4 text-xl font-black active:scale-95 transition shadow-2xl"
+          >
+            {t.at_scratch_done}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+
+function ProgressBar({ value }: { value: number }) {
+  const color = value > 65 ? "#22c55e" : value > 35 ? "#f59e0b" : "#ef4444";
   return (
     <div className="w-full bg-gray-200 rounded-full h-5 relative overflow-hidden">
       <div
         className="h-5 rounded-full transition-all duration-700"
-        style={{ width: `${value}%`, backgroundColor: value > 50 ? color : "#ef4444" }}
+        style={{ width: `${value}%`, backgroundColor: color }}
       />
-      <span
-        className="absolute inset-0 flex items-center justify-center text-xs font-bold"
-        style={{ color: value > 50 ? "#fff" : accent }}
-      >
+      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-700">
         {value}%
       </span>
     </div>
@@ -62,6 +206,8 @@ function ATHubInner() {
   const [state, setState] = useState<GameState | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [scratchDone, setScratchDone] = useState(false);
+  const [peeking, setPeeking] = useState(false);
 
   // UI state
   const [accuseTarget, setAccuseTarget] = useState<string | null>(null);
@@ -69,6 +215,24 @@ function ATHubInner() {
   const [ghostTarget, setGhostTarget] = useState<string | null>(null);
   const [loading, setLoading] = useState("");
   const [flash, setFlash] = useState("");
+
+  // Check sessionStorage to skip scratch card if already done this session
+  useEffect(() => {
+    if (!room || !code) return;
+    if (sessionStorage.getItem(`at_scratched_${room}_${code}`) === "1") {
+      setScratchDone(true);
+    }
+  }, [room, code]);
+
+  function markScratchDone() {
+    sessionStorage.setItem(`at_scratched_${room}_${code}`, "1");
+    setScratchDone(true);
+  }
+
+  function handlePeek() {
+    setPeeking(true);
+    setTimeout(() => setPeeking(false), 4000);
+  }
 
   // Subscribe to room state
   useEffect(() => {
@@ -182,6 +346,21 @@ function ATHubInner() {
     if (!result.success) showFlash("Erreur.");
   }
 
+  // ── Scratch card gate ────────────────────────────────────────────────────────
+  if (!scratchDone) {
+    return (
+      <>
+        <main className="min-h-screen" />
+        <ScratchCardScreen
+          player={player}
+          fellowTraitors={fellowTraitors}
+          t={t}
+          onDone={markScratchDone}
+        />
+      </>
+    );
+  }
+
   // ── Game over screen ────────────────────────────────────────────────────────
   if (state.winnerSide) {
     const agentsWon = state.winnerSide === "agents";
@@ -192,6 +371,9 @@ function ATHubInner() {
         <h1 className="text-4xl font-bold">
           {agentsWon ? t.at_winner_agents : t.at_winner_traitors}
         </h1>
+        <p className="text-sm text-gray-500">
+          {t.at_role_label} : <strong>{role === "traitor" ? t.at_role_traitor : t.at_role_agent}</strong>
+        </p>
         <div className="bg-gray-50 rounded-2xl p-4 w-full max-w-xs text-left">
           <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">
             {t.at_traitors_revealed}
@@ -250,7 +432,7 @@ function ATHubInner() {
         {/* Progress bar */}
         <div className="flex flex-col gap-2">
           <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_progress_label}</p>
-          <ProgressBar value={visualProgress} accent={accent} />
+          <ProgressBar value={visualProgress} />
           <p className="text-xs text-gray-400 text-center">{t.at_progress_target}</p>
         </div>
 
@@ -370,31 +552,45 @@ function ATHubInner() {
         </div>
       )}
 
-      {/* Role badge */}
-      <div
-        className="rounded-2xl p-5 flex flex-col items-center gap-1 text-white"
-        style={{ backgroundColor: role === "agent" ? "#3b82f6" : "#dc2626" }}
-      >
-        <p className="text-xs uppercase tracking-widest opacity-70">{t.at_role_label}</p>
-        <p className="text-4xl font-black tracking-wider">
-          {role === "agent" ? t.at_role_agent : t.at_role_traitor}
-        </p>
-        <p className="text-sm opacity-80 text-center max-w-xs">
-          {role === "agent" ? t.at_role_hint_agent : t.at_role_hint_traitor}
-        </p>
-      </div>
-
-      {/* Fellow traitors (only traitors see this) */}
-      {fellowTraitors.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col gap-2">
-          <p className="text-xs text-red-400 uppercase tracking-widest">{t.at_fellow_traitors}</p>
-          {fellowTraitors.map((p) => (
-            <p key={p.code} className="font-semibold text-red-700">
-              {p.name} {p.alive ? "" : "⚰️"}
-            </p>
-          ))}
+      {/* Peek overlay — tappable, auto-dismisses in 4s */}
+      {peeking && (
+        <div
+          className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-5 p-8 text-white text-center"
+          style={{ backgroundColor: role === "agent" ? "#1d4ed8ee" : "#dc2626ee" }}
+          onClick={() => setPeeking(false)}
+        >
+          <p className="text-sm uppercase tracking-widest opacity-60">{t.at_role_label}</p>
+          <p className="text-7xl font-black tracking-wider">
+            {role === "agent" ? t.at_role_agent : t.at_role_traitor}
+          </p>
+          {fellowTraitors.length > 0 && (
+            <div className="bg-white/20 rounded-2xl p-4 w-full max-w-xs text-left">
+              <p className="text-xs uppercase tracking-widest opacity-60 mb-2">{t.at_fellow_traitors}</p>
+              {fellowTraitors.map((p) => (
+                <p key={p.code} className="font-bold text-xl">{p.name}</p>
+              ))}
+            </div>
+          )}
+          <p className="text-sm opacity-50 mt-4">Appuyez pour masquer</p>
         </div>
       )}
+
+      {/* Discreet header — colored dot + name + peek button */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div
+            className="w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: role === "agent" ? "#2563eb" : "#dc2626" }}
+          />
+          <p className="font-bold text-lg">{player.name}</p>
+        </div>
+        <button
+          onClick={handlePeek}
+          className="text-xs text-gray-400 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition"
+        >
+          {t.at_peek_role}
+        </button>
+      </div>
 
       {/* Player code + QR */}
       <div className="flex flex-col items-center gap-3 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -407,7 +603,7 @@ function ATHubInner() {
       {/* Progress bar */}
       <div className="flex flex-col gap-2">
         <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_progress_label}</p>
-        <ProgressBar value={visualProgress} accent={accent} />
+        <ProgressBar value={visualProgress} />
         <p className="text-xs text-gray-400 text-center">{t.at_progress_target}</p>
       </div>
 
