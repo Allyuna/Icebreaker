@@ -8,6 +8,8 @@ export type ATRole = "agent" | "traitor";
 
 export interface ATConfig {
   traitorCount: number;
+  /** Total number of players expected to join. Used to size the role pool correctly. */
+  expectedPlayerCount: number;
   /** Seconds between -1% passive decay. */
   decayIntervalSecs: number;
   /** Fraction of alive players needed to trigger a trial (e.g. 0.12 = 12%). */
@@ -24,6 +26,7 @@ export interface ATConfig {
 
 export const DEFAULT_AT_CONFIG: ATConfig = {
   traitorCount: 3,
+  expectedPlayerCount: 20,
   decayIntervalSecs: 30,
   trialThresholdPct: 0.12,
   trialDurationSecs: 30,

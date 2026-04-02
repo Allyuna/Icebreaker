@@ -224,10 +224,11 @@ export default function AdminPage() {
     if (state.gameMode === "agents-traitors") {
       try {
         const config: ATConfig = state.atConfig ?? { ...DEFAULT_AT_CONFIG };
-        // Generate a pre-shuffled role pool for up to 100 players
+        // Generate a pre-shuffled role pool sized to expected player count
+        const poolSize = Math.max(config.expectedPlayerCount, config.traitorCount);
         const pool: ("agent" | "traitor")[] = [];
         for (let i = 0; i < config.traitorCount; i++) pool.push("traitor");
-        while (pool.length < 100) pool.push("agent");
+        while (pool.length < poolSize) pool.push("agent");
         for (let i = pool.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -631,6 +632,7 @@ export default function AdminPage() {
               {(
                 [
                   { key: "traitorCount", label: t.at_admin_traitor_count, min: 1, max: 20 },
+                  { key: "expectedPlayerCount", label: t.at_admin_player_count, min: 2, max: 100 },
                   { key: "decayIntervalSecs", label: t.at_admin_decay, min: 10, max: 240 },
                   {
                     key: "trialThresholdPct",

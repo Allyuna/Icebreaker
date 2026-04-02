@@ -142,6 +142,7 @@ const fr = {
   // ─── Agents & Traitors — admin config ─────────────────────────────────────
   at_admin_config_title: "Configuration — Agents & Traîtres",
   at_admin_traitor_count: "Nombre de traîtres",
+  at_admin_player_count: "Nombre de joueurs attendus",
   at_admin_decay: "Décroissance (toutes les … s)",
   at_admin_trial_threshold: "Seuil procès (% des joueurs en vie)",
   at_admin_trial_duration: "Durée défense (s)",
@@ -293,6 +294,7 @@ const en: typeof fr = {
   // ─── Agents & Traitors — admin config ─────────────────────────────────────
   at_admin_config_title: "Configuration — Agents & Traitors",
   at_admin_traitor_count: "Number of traitors",
+  at_admin_player_count: "Expected number of players",
   at_admin_decay: "Decay (every … s)",
   at_admin_trial_threshold: "Trial threshold (% of alive players)",
   at_admin_trial_duration: "Defense duration (s)",
