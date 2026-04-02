@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { loadRoom, saveRoom } from "@/app/lib/db";
+import { queueATMatchInRoom } from "@/app/lib/db";
 import {
   getPlayerByCode,
   getMotieWord,
@@ -34,8 +35,10 @@ function ConfirmInner() {
   const [myWord, setMyWord] = useState("");
   const [theirWord, setTheirWord] = useState("");
   const [accent, setAccent] = useState("#000000");
+  const [gameMode, setGameMode] = useState("its-a-match");
   const [notFound, setNotFound] = useState(false);
   const [wrongMatch, setWrongMatch] = useState(false);
+  const [atError, setAtError] = useState("");
 
   useEffect(() => {
     if (!room) { setNotFound(true); return; }
@@ -46,6 +49,7 @@ function ConfirmInner() {
       if (!mePlayer || !themPlayer) { setNotFound(true); return; }
       setMe(mePlayer);
       setThem(themPlayer);
+      setGameMode(state.gameMode ?? "its-a-match");
       setMyWord(getMotieWord(state, mePlayer));
       setTheirWord(getMotieWord(state, themPlayer));
       setAccent(state.accentColor ?? "#000000");
@@ -54,6 +58,25 @@ function ConfirmInner() {
 
   async function handleYes() {
     if (!me) return;
+
+    // ── Agents & Traitors: queue the scan event ───────────────────────────────
+    if (gameMode === "agents-traitors") {
+      if (!them?.alive) {
+        setAtError(t.at_confirm_dead);
+        return;
+      }
+      const result = await queueATMatchInRoom(room, myCode, theirCode);
+      if (!result.success) {
+        if (result.error === "cooldown") setAtError(t.at_confirm_cooldown);
+        else if (result.error === "player_not_alive") setAtError(t.at_confirm_dead);
+        else setAtError(t.at_confirm_cooldown);
+        return;
+      }
+      router.push(`/at/hub?code=${myCode}&room=${room}`);
+      return;
+    }
+
+    // ── It's a Match: pair confirmation ──────────────────────────────────────
     const isCorrect = me.partnerCode === theirCode;
     if (!isCorrect) {
       setWrongMatch(true);
@@ -91,48 +114,89 @@ function ConfirmInner() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
-      <h1 className="text-3xl font-bold text-center">{t.confirm_title}</h1>
+      <h1 className="text-3xl font-bold text-center">
+        {gameMode === "agents-traitors" ? t.at_confirm_title : t.confirm_title}
+      </h1>
 
-      <div className="flex gap-4 w-full max-w-sm">
-        <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
-          <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_you}</p>
-          <p className="font-bold text-lg">{me.name}</p>
-          <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{myWord}</p>
-        </div>
-        <div className="flex items-center justify-center text-3xl text-gray-300">+</div>
-        <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
-          <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_them}</p>
-          <p className="font-bold text-lg">{them.name}</p>
-          <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{theirWord}</p>
-        </div>
-      </div>
+      {/* ── Agents & Traitors scan confirmation ────────────────────────────── */}
+      {gameMode === "agents-traitors" ? (
+        <>
+          <div className="flex flex-col items-center gap-3 bg-gray-50 rounded-2xl p-6 w-full max-w-xs">
+            <p className="text-sm text-gray-400 uppercase tracking-widest">{t.at_confirm_scanning}</p>
+            <p className="text-3xl font-bold">{them?.name}</p>
+            <p className="font-mono text-gray-400 text-sm">#{theirCode}</p>
+          </div>
 
-      <p className="text-center text-gray-500 text-sm">{t.confirm_question}</p>
+          {atError && (
+            <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm text-center w-full max-w-xs">
+              {atError}
+            </div>
+          )}
 
-      {wrongMatch && (
-        <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm text-center w-full max-w-xs">
-          {t.confirm_wrong}
-        </div>
+          <div className="flex gap-4 w-full max-w-xs">
+            <button
+              onClick={handleYes}
+              className="flex-1 bg-green-500 text-white rounded-xl py-4 text-lg font-bold hover:bg-green-600 active:scale-95 transition"
+            >
+              {t.at_confirm_btn}
+            </button>
+            <button
+              onClick={handleNo}
+              className="flex-1 bg-red-100 text-red-600 rounded-xl py-4 text-lg font-bold hover:bg-red-200 active:scale-95 transition"
+            >
+              {t.at_confirm_cancel}
+            </button>
+          </div>
+
+          <Link href={`/find?myCode=${myCode}&room=${room}`} className="text-sm text-gray-400 underline">
+            {t.confirm_back}
+          </Link>
+        </>
+      ) : (
+        /* ── It's a Match pair confirmation ────────────────────────────────── */
+        <>
+          <div className="flex gap-4 w-full max-w-sm">
+            <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
+              <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_you}</p>
+              <p className="font-bold text-lg">{me?.name}</p>
+              <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{myWord}</p>
+            </div>
+            <div className="flex items-center justify-center text-3xl text-gray-300">+</div>
+            <div className="flex-1 flex flex-col items-center gap-1 bg-gray-50 rounded-2xl p-4">
+              <p className="text-xs text-gray-400 uppercase tracking-widest">{t.confirm_them}</p>
+              <p className="font-bold text-lg">{them?.name}</p>
+              <p className="text-3xl font-bold mt-1" style={{ color: accent }}>{theirWord}</p>
+            </div>
+          </div>
+
+          <p className="text-center text-gray-500 text-sm">{t.confirm_question}</p>
+
+          {wrongMatch && (
+            <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm text-center w-full max-w-xs">
+              {t.confirm_wrong}
+            </div>
+          )}
+
+          <div className="flex gap-4 w-full max-w-xs">
+            <button
+              onClick={handleYes}
+              className="flex-1 bg-green-500 text-white rounded-xl py-4 text-xl font-bold hover:bg-green-600 active:scale-95 transition"
+            >
+              {t.confirm_yes}
+            </button>
+            <button
+              onClick={handleNo}
+              className="flex-1 bg-red-100 text-red-600 rounded-xl py-4 text-xl font-bold hover:bg-red-200 active:scale-95 transition"
+            >
+              {t.confirm_no}
+            </button>
+          </div>
+
+          <Link href={`/mission?code=${myCode}&room=${room}`} className="text-sm text-gray-400 underline">
+            {t.confirm_back}
+          </Link>
+        </>
       )}
-
-      <div className="flex gap-4 w-full max-w-xs">
-        <button
-          onClick={handleYes}
-          className="flex-1 bg-green-500 text-white rounded-xl py-4 text-xl font-bold hover:bg-green-600 active:scale-95 transition"
-        >
-          {t.confirm_yes}
-        </button>
-        <button
-          onClick={handleNo}
-          className="flex-1 bg-red-100 text-red-600 rounded-xl py-4 text-xl font-bold hover:bg-red-200 active:scale-95 transition"
-        >
-          {t.confirm_no}
-        </button>
-      </div>
-
-      <Link href={`/mission?code=${myCode}&room=${room}`} className="text-sm text-gray-400 underline">
-        {t.confirm_back}
-      </Link>
     </main>
   );
 }

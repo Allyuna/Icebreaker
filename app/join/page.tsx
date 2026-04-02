@@ -38,7 +38,7 @@ function JoinInner() {
     setLoading(true);
     setError("");
     try {
-      const { player, error: err } = await registerPlayerInRoom(room, playerName);
+      const { player, gameMode, error: err } = await registerPlayerInRoom(room, playerName);
       if (!player) {
         if (err === "not_found") setError(t.join_err_notfound);
         else if (err === "not_playing") setError(t.join_err_notplaying);
@@ -47,7 +47,11 @@ function JoinInner() {
         setIsPending(false);
         return;
       }
-      router.push(`/mission?code=${player.code}&room=${room}`);
+      const hubPath =
+        gameMode === "agents-traitors"
+          ? `/at/hub?code=${player.code}&room=${room}`
+          : `/mission?code=${player.code}&room=${room}`;
+      router.push(hubPath);
     } catch {
       setError(t.join_err_network);
       setIsPending(false);

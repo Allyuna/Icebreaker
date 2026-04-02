@@ -25,6 +25,7 @@ function FindInner() {
   const [manualCode, setManualCode] = useState("");
   const [error, setError] = useState("");
   const [accent, setAccent] = useState("#000000");
+  const [gameMode, setGameMode] = useState("its-a-match");
   const [scanning, setScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -32,7 +33,10 @@ function FindInner() {
   useEffect(() => {
     if (room) {
       loadRoom(room).then((s) => {
-        if (s) setAccent(s.accentColor ?? "#000000");
+        if (s) {
+          setAccent(s.accentColor ?? "#000000");
+          setGameMode(s.gameMode ?? "its-a-match");
+        }
       });
     }
   }, [room]);
@@ -160,7 +164,11 @@ function FindInner() {
       </form>
 
       <Link
-        href={`/mission?code=${myCode}&room=${room}`}
+        href={
+          gameMode === "agents-traitors"
+            ? `/at/hub?code=${myCode}&room=${room}`
+            : `/mission?code=${myCode}&room=${room}`
+        }
         className="text-sm text-gray-400 underline"
       >
         {t.find_back}

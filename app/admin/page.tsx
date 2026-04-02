@@ -4,15 +4,16 @@ import { useState, useEffect } from "react";
 import {
   type Pair,
   type GameState,
+  type ATConfig,
+  DEFAULT_AT_CONFIG,
 } from "@/app/lib/store";
 import { loadRoom, saveRoom, subscribeRoom } from "@/app/lib/db";
 import { useLang } from "@/app/lib/LangContext";
 
 // ─── Game modes registry ──────────────────────────────────────────────────────
-// Add new modes here when they are ready. Only 'its-a-match' is active for now.
 const GAME_MODES = [
   { id: "its-a-match", label: "🃏 It's a Match", available: true },
-  // { id: "trivia", label: "🧠 Quiz express", available: false },
+  { id: "agents-traitors", label: "🕵️ Agents & Traîtres", available: true },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -216,13 +217,54 @@ export default function AdminPage() {
   // ── Game control ─────────────────────────────────────────────────────────────
   async function handleLaunch() {
     if (!state || !roomCode) return;
+    setIsLaunching(true);
+    setError("");
+
+    // ── Agents & Traitors launch ──────────────────────────────────────────────
+    if (state.gameMode === "agents-traitors") {
+      try {
+        const config: ATConfig = state.atConfig ?? { ...DEFAULT_AT_CONFIG };
+        // Generate a pre-shuffled role pool for up to 100 players
+        const pool: ("agent" | "traitor")[] = [];
+        for (let i = 0; i < config.traitorCount; i++) pool.push("traitor");
+        while (pool.length < 100) pool.push("agent");
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const newState: GameState = {
+          ...state,
+          status: "playing",
+          players: [],
+          nextCode: 1,
+          atConfig: config,
+          atRolePool: pool,
+          globalProgress: 50,
+          lastMatchAt: Date.now(),
+          matchQueue: [],
+          trial: null,
+          ghostLog: [],
+          disruptedUntil: 0,
+          revealedRoles: {},
+          winnerSide: null,
+        };
+        await saveRoom(roomCode, newState);
+        setState(newState);
+      } catch {
+        setError("Impossible de lancer la partie. Vérifie ta connexion Firebase.");
+      } finally {
+        setIsLaunching(false);
+      }
+      return;
+    }
+
+    // ── It's a Match launch ───────────────────────────────────────────────────
     const validPairs = state.pairs.filter((p) => p.wordA.trim() && p.wordB.trim());
     if (validPairs.length === 0) {
       setError("Ajoute au moins une paire avant de lancer !");
+      setIsLaunching(false);
       return;
     }
-    setIsLaunching(true);
-    setError("");
     try {
       const newState: GameState = {
         ...state,
@@ -257,6 +299,16 @@ export default function AdminPage() {
       players: [],
       accentColor: state?.accentColor ?? "#000000",
       gameMode: state?.gameMode ?? "its-a-match",
+      atConfig: state?.atConfig,
+      atRolePool: undefined,
+      globalProgress: undefined,
+      lastMatchAt: undefined,
+      matchQueue: undefined,
+      trial: undefined,
+      ghostLog: undefined,
+      disruptedUntil: undefined,
+      revealedRoles: undefined,
+      winnerSide: undefined,
     };
     await saveRoom(roomCode, fresh);
     setState(fresh);
@@ -412,18 +464,86 @@ export default function AdminPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Joueurs inscrits", value: state.players.length },
-          { label: "Matchs trouvés", value: matchedCount },
-          { label: "Places restantes", value: openSlots > 0 ? openSlots : 0 },
-        ].map(({ label, value }) => (
-          <div key={label} className="bg-gray-50 rounded-2xl p-4 flex flex-col items-center gap-1">
-            <span className="text-3xl font-bold">{value}</span>
-            <span className="text-xs text-gray-400 text-center">{label}</span>
+      {state.gameMode === "agents-traitors" ? (
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: t.at_admin_stats_alive, value: state.players.filter((p) => p.alive).length },
+              {
+                label: t.at_admin_stats_traitors,
+                value: state.players.filter((p) => p.alive && p.role === "traitor").length,
+              },
+              { label: "Joueurs inscrits", value: state.players.length },
+            ].map(({ label, value }) => (
+              <div key={label} className="bg-gray-50 rounded-2xl p-4 flex flex-col items-center gap-1">
+                <span className="text-3xl font-bold">{value}</span>
+                <span className="text-xs text-gray-400 text-center">{label}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+          {/* Progress bar */}
+          {state.status === "playing" && (
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-2">
+              <div className="flex justify-between text-xs text-gray-400 uppercase tracking-widest">
+                <span>{t.at_admin_stats_progress}</span>
+                <span className="font-bold text-gray-700">{state.globalProgress ?? 50}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="h-3 rounded-full transition-all"
+                  style={{
+                    width: `${state.globalProgress ?? 50}%`,
+                    backgroundColor:
+                      (state.globalProgress ?? 50) > 60
+                        ? "#22c55e"
+                        : (state.globalProgress ?? 50) > 35
+                        ? "#f59e0b"
+                        : "#ef4444",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {/* Player role list (admin view) */}
+          {state.players.length > 0 && (
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-2">
+              <p className="text-xs text-gray-400 uppercase tracking-widest">Joueurs & rôles</p>
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {state.players.map((p) => (
+                  <div key={p.code} className="flex items-center justify-between text-sm">
+                    <span className={p.alive ? "font-medium" : "text-gray-400 line-through"}>
+                      {p.name}
+                    </span>
+                    <span
+                      className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        p.role === "traitor"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      {p.role === "traitor" ? "TRAÎTRE" : "AGENT"}
+                      {p.isGhost ? " 👻" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: "Joueurs inscrits", value: state.players.length },
+            { label: "Matchs trouvés", value: matchedCount },
+            { label: "Places restantes", value: openSlots > 0 ? openSlots : 0 },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-gray-50 rounded-2xl p-4 flex flex-col items-center gap-1">
+              <span className="text-3xl font-bold">{value}</span>
+              <span className="text-xs text-gray-400 text-center">{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Game controls */}
       {error && (
@@ -484,7 +604,15 @@ export default function AdminPage() {
                     checked={state.gameMode === mode.id}
                     disabled={!mode.available}
                     onChange={() =>
-                      setState((s) => (s ? { ...s, gameMode: mode.id } : s))
+                      setState((s) => {
+                        if (!s) return s;
+                        const next = { ...s, gameMode: mode.id };
+                        // Initialise AT config when switching to that mode
+                        if (mode.id === "agents-traitors" && !next.atConfig) {
+                          next.atConfig = { ...DEFAULT_AT_CONFIG };
+                        }
+                        return next;
+                      })
                     }
                   />
                   <span className="font-medium">{mode.label}</span>
@@ -495,6 +623,56 @@ export default function AdminPage() {
               ))}
             </div>
           </div>
+
+          {/* ── AT config panel (only for Agents & Traitors mode) ─────────── */}
+          {state.gameMode === "agents-traitors" && (
+            <div className="flex flex-col gap-4 bg-gray-50 rounded-2xl p-4">
+              <h2 className="text-lg font-semibold">{t.at_admin_config_title}</h2>
+              {(
+                [
+                  { key: "traitorCount", label: t.at_admin_traitor_count, min: 1, max: 20 },
+                  { key: "decayIntervalSecs", label: t.at_admin_decay, min: 10, max: 240 },
+                  {
+                    key: "trialThresholdPct",
+                    label: t.at_admin_trial_threshold,
+                    min: 5,
+                    max: 30,
+                    scale: 100,
+                  },
+                  { key: "trialDurationSecs", label: t.at_admin_trial_duration, min: 10, max: 120 },
+                  { key: "scanCooldownSecs", label: t.at_admin_scan_cooldown, min: 10, max: 300 },
+                  { key: "ghostCooldownSecs", label: t.at_admin_ghost_cooldown, min: 30, max: 600 },
+                  { key: "progressPerMatch", label: t.at_admin_progress_per_match, min: 1, max: 10 },
+                ] as { key: keyof typeof DEFAULT_AT_CONFIG; label: string; min: number; max: number; scale?: number }[]
+              ).map(({ key, label, min, max, scale }) => {
+                const cfg = state.atConfig ?? DEFAULT_AT_CONFIG;
+                const raw = cfg[key] as number;
+                const display = scale ? Math.round(raw * scale) : raw;
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4">
+                    <label className="text-sm text-gray-700 flex-1">{label}</label>
+                    <input
+                      type="number"
+                      min={min}
+                      max={max}
+                      value={display}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (isNaN(v)) return;
+                        const stored = scale ? v / scale : v;
+                        setState((s) =>
+                          s
+                            ? { ...s, atConfig: { ...(s.atConfig ?? DEFAULT_AT_CONFIG), [key]: stored } }
+                            : s
+                        );
+                      }}
+                      className="border rounded-lg px-2 py-1 w-20 text-sm text-center focus:outline-none focus:ring-2 focus:ring-black"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Accent colour */}
           <div className="flex flex-col gap-2">
@@ -527,7 +705,8 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Pair editor */}
+          {/* Pair editor — only for It's a Match */}
+          {state.gameMode !== "agents-traitors" && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Paires de mots</h2>
@@ -562,6 +741,18 @@ export default function AdminPage() {
               {saved ? "✓ Enregistré !" : "Enregistrer"}
             </button>
           </div>
+          )}
+
+          {/* Save for AT mode */}
+          {state.gameMode === "agents-traitors" && (
+            <button
+              onClick={handleSave}
+              className="text-white rounded-lg py-3 font-semibold active:scale-95 transition"
+              style={{ backgroundColor: accent }}
+            >
+              {saved ? "✓ Enregistré !" : "Enregistrer"}
+            </button>
+          )}
         </section>
       )}
 
