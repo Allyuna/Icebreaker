@@ -70,6 +70,8 @@ export interface ATGhostLogEntry {
   targetCode?: string;
   /** Message shown to all players in the ghost log. */
   publicMessage: string;
+  /** Extra message shown only to the ghost who performed the action. */
+  privateMessage?: string;
 }
 
 /** A concept-pair the admin enters (e.g. "Soleil" / "Lune"). */
@@ -427,7 +429,7 @@ export function atAccuse(
   const updatedPlayers = state.players.map((p) => (p.code === targetCode ? updatedTarget : p));
   const aliveCount = updatedPlayers.filter((p) => p.alive).length;
   const config = state.atConfig ?? DEFAULT_AT_CONFIG;
-  const votesNeeded = Math.max(2, Math.ceil(aliveCount * config.trialThresholdPct));
+  const votesNeeded = Math.max(1, Math.min(aliveCount - 1, Math.max(2, Math.ceil(aliveCount * config.trialThresholdPct))));
   let trialTriggered = false;
   let newState: GameState = { ...state, players: updatedPlayers };
 
@@ -514,6 +516,7 @@ export function applyATGhostAction(
 
   let newState: GameState = { ...state };
   let publicMessage = "";
+  let privateMessage: string | undefined;
 
   switch (type) {
     case "agent_boost": {
@@ -525,6 +528,7 @@ export function applyATGhostAction(
         winnerSide: progress >= 100 ? "agents" : (newState.winnerSide ?? null),
       };
       publicMessage = "👻 Un agent fantôme envoie un signal de renfort ! (+3%)";
+      privateMessage = `👻 Tu as renforcé le réseau. Progression : ${progress}%`;
       break;
     }
     case "agent_reveal": {
@@ -537,8 +541,7 @@ export function applyATGhostAction(
         ...newState,
         revealedRoles: { ...(newState.revealedRoles ?? {}), [pick.code]: pick.role! },
       };
-      publicMessage = `🔍 Un agent fantôme a révélé l'identité de ${pick.name} !`;
-      break;
+      publicMessage = `🔍 Un agent fantôme a révélé l'identité de ${pick.name} !`;      privateMessage = `🔍 Tu as révélé que ${pick.name} est : ${pick.role === "traitor" ? "TRAÎTRE 🔴" : "AGENT 🔵"}`;      break;
     }
     case "agent_protect": {
       if (!targetCode) return state;
@@ -551,6 +554,7 @@ export function applyATGhostAction(
         ),
       };
       publicMessage = `🛡️ Un agent fantôme protège ${tgt.name} pendant 90 secondes !`;
+      privateMessage = `🛡️ Tu as protégé ${tgt.name} contre les accusations pendant 90 secondes.`;
       break;
     }
     case "traitor_sabotage": {
@@ -561,6 +565,7 @@ export function applyATGhostAction(
         winnerSide: progress <= 0 ? "traitors" : (newState.winnerSide ?? null),
       };
       publicMessage = "💣 Un traître fantôme sabote le réseau ! (-3%)";
+      privateMessage = `💣 Tu as saboté le réseau. Progression : ${progress}%`;
       break;
     }
     case "traitor_plant": {
@@ -573,9 +578,10 @@ export function applyATGhostAction(
         p.code === targetCode ? { ...p, suspicionVoters: newVoters } : p
       );
       publicMessage = `👁️ Quelque chose de louche rôde autour de ${tgt.name}…`;
+      privateMessage = `👁️ Tu as planté des votes de suspicion sur ${tgt.name}.`;
       // Check if this plants enough votes for a trial
       const aliveCount = updatedPlayers.filter((p) => p.alive).length;
-      const votesNeeded = Math.max(2, Math.ceil(aliveCount * config.trialThresholdPct));
+      const votesNeeded = Math.max(1, Math.min(aliveCount - 1, Math.max(2, Math.ceil(aliveCount * config.trialThresholdPct))));
       if (newVoters.length >= votesNeeded && (!newState.trial || newState.trial.phase === "resolved")) {
         newState = {
           ...newState,
@@ -590,6 +596,7 @@ export function applyATGhostAction(
     case "traitor_disrupt": {
       newState = { ...newState, disruptedUntil: now + 45_000 };
       publicMessage = "📡 Les connexions sont brouillées ! Les scans sont perturbés pendant 45 secondes.";
+      privateMessage = "📡 Tu as brouillé le réseau. Les scans sont bloqués pendant 45 secondes.";
       break;
     }
   }
@@ -608,6 +615,7 @@ export function applyATGhostAction(
         appliedAt: now,
         targetCode,
         publicMessage,
+        privateMessage,
       },
     ],
   };

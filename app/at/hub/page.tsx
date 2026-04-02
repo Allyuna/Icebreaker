@@ -344,6 +344,7 @@ function ATHubInner() {
     setGhostAction(null);
     setGhostTarget(null);
     if (!result.success) showFlash("Erreur.");
+    else showFlash("✅ Action accomplie !");
   }
 
   // ── Scratch card gate ────────────────────────────────────────────────────────
@@ -532,8 +533,12 @@ function ATHubInner() {
           <div className="flex flex-col gap-2">
             <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_ghost_log_title}</p>
             {ghostLog.map((entry) => (
-              <p key={entry.id} className="text-sm text-gray-500 italic">
-                {entry.publicMessage}
+              <p key={entry.id} className={`text-sm italic ${
+                entry.actorCode === code ? "text-indigo-600 font-semibold" : "text-gray-500"
+              }`}>
+                {entry.actorCode === code && entry.privateMessage
+                  ? entry.privateMessage
+                  : entry.publicMessage}
               </p>
             ))}
           </div>
@@ -575,15 +580,9 @@ function ATHubInner() {
         </div>
       )}
 
-      {/* Discreet header — colored dot + name + peek button */}
+      {/* Discreet header — name + peek button */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: role === "agent" ? "#2563eb" : "#dc2626" }}
-          />
-          <p className="font-bold text-lg">{player.name}</p>
-        </div>
+        <p className="font-bold text-lg">{player.name}</p>
         <button
           onClick={handlePeek}
           className="text-xs text-gray-400 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition"
@@ -810,8 +809,12 @@ function ATHubInner() {
         <div className="flex flex-col gap-2">
           <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_ghost_log_title}</p>
           {ghostLog.map((entry) => (
-            <p key={entry.id} className="text-sm text-gray-500 italic">
-              {entry.publicMessage}
+            <p key={entry.id} className={`text-sm italic ${
+              entry.actorCode === code ? "text-indigo-600 font-semibold" : "text-gray-500"
+            }`}>
+              {entry.actorCode === code && entry.privateMessage
+                ? entry.privateMessage
+                : entry.publicMessage}
             </p>
           ))}
         </div>
