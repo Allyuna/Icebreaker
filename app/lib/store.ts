@@ -74,6 +74,16 @@ export interface ATGhostLogEntry {
   privateMessage?: string;
 }
 
+export interface ATEventEntry {
+  id: string;
+  at: number;
+  /** "scan" = player scanned another | "accused" = player accused another | "trial_result" = verdict */
+  type: "scan" | "accused" | "trial_result";
+  actorCode: string;
+  targetCode: string;
+  note?: string; // for trial_result: "eliminated" | "acquitted"
+}
+
 /** A concept-pair the admin enters (e.g. "Soleil" / "Lune"). */
 export interface Pair {
   id: number;
@@ -128,6 +138,8 @@ export interface GameState {
   matchQueue?: ATMatchEvent[];
   trial?: ATTrial | null;
   ghostLog?: ATGhostLogEntry[];
+  /** Persistent event log for player history. */
+  eventLog?: ATEventEntry[];
   /** ms timestamp until scan disruption expires. */
   disruptedUntil?: number;
   /** Publicly revealed roles (code → role). */
@@ -448,7 +460,64 @@ export function atAccuse(
       players: updatedPlayers.map((p) => (p.code === targetCode ? { ...p, suspicionVoters: [] } : p)),
     };
   }
+  if (trialTriggered) {
+    const trialEvent: ATEventEntry = {
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      at: now,
+      type: "accused",
+      actorCode: accuserCode,
+      targetCode,
+    };
+    newState = { ...newState, eventLog: [...(newState.eventLog ?? []), trialEvent] };
+  }
   return { state: newState, trialTriggered };
+}
+
+/**
+ * Resolves the voting phase of an active trial.
+ * Can be called immediately (all voted) or after timer expiry.
+ */
+export function resolveATVoting(state: GameState, now: number = Date.now()): GameState {
+  const trial = state.trial;
+  if (!trial || trial.phase !== "voting") return state;
+
+  const guiltyCount = Object.values(trial.votes).filter((v) => v === "guilty").length;
+  const innocentCount = Object.values(trial.votes).filter((v) => v === "innocent").length;
+  const outcome: "eliminated" | "acquitted" =
+    guiltyCount > innocentCount ? "eliminated" : "acquitted";
+
+  const newRevealedRoles = { ...(state.revealedRoles ?? {}) };
+  const players = state.players.map((p) => {
+    if (p.code !== trial.targetCode) return p;
+    if (outcome === "eliminated") {
+      newRevealedRoles[p.code] = p.role!;
+      return { ...p, alive: false, isGhost: true, suspicionVoters: [] };
+    }
+    return { ...p, suspicionVoters: [] };
+  });
+
+  const totalTraitors = players.filter((p) => p.role === "traitor").length;
+  const aliveTraitors = players.filter((p) => p.alive && p.role === "traitor").length;
+  let winnerSide = state.winnerSide ?? null;
+  if (totalTraitors > 0 && aliveTraitors === 0) winnerSide = "agents";
+
+  const eventEntry: ATEventEntry = {
+    id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+    at: now,
+    type: "trial_result",
+    actorCode: trial.targetCode,
+    targetCode: trial.targetCode,
+    note: outcome,
+  };
+
+  return {
+    ...state,
+    players,
+    trial: { ...trial, phase: "resolved", outcome },
+    revealedRoles: newRevealedRoles,
+    winnerSide,
+    eventLog: [...(state.eventLog ?? []), eventEntry],
+  };
 }
 
 /**
@@ -467,33 +536,7 @@ export function advanceATTrial(state: GameState, now: number = Date.now()): Game
   }
 
   if (trial.phase === "voting") {
-    const guiltyCount = Object.values(trial.votes).filter((v) => v === "guilty").length;
-    const innocentCount = Object.values(trial.votes).filter((v) => v === "innocent").length;
-    const outcome: "eliminated" | "acquitted" =
-      guiltyCount > innocentCount ? "eliminated" : "acquitted";
-
-    const newRevealedRoles = { ...(state.revealedRoles ?? {}) };
-    const players = state.players.map((p) => {
-      if (p.code !== trial.targetCode) return p;
-      if (outcome === "eliminated") {
-        newRevealedRoles[p.code] = p.role!;
-        return { ...p, alive: false, isGhost: true, suspicionVoters: [] };
-      }
-      return { ...p, suspicionVoters: [] };
-    });
-
-    const totalTraitors = players.filter((p) => p.role === "traitor").length;
-    const aliveTraitors = players.filter((p) => p.alive && p.role === "traitor").length;
-    let winnerSide = state.winnerSide ?? null;
-    if (totalTraitors > 0 && aliveTraitors === 0) winnerSide = "agents";
-
-    return {
-      ...state,
-      players,
-      trial: { ...trial, phase: "resolved", outcome },
-      revealedRoles: newRevealedRoles,
-      winnerSide,
-    };
+    return resolveATVoting(state, now);
   }
   return state;
 }

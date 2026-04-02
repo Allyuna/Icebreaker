@@ -157,6 +157,17 @@ const fr = {
   at_scratch_memorize: "Mémorisez bien — votre rôle ne sera plus affiché !",
   at_scratch_done: "Commencer à jouer 🕵️",
   at_peek_role: "👁️ Voir mon rôle",
+
+  // ─── Scan & history ─────────────────────────────────────────────────────────
+  at_scan_recorded: "✅ Scan enregistré !",
+  at_history_title: "Historique",
+  at_history_scans: "Mes scans",
+  at_history_empty: "Pas encore d'activité",
+
+  // ─── Admin live panels ───────────────────────────────────────────────────────
+  at_admin_trial_live: "⚖️ Procès en cours",
+  at_admin_suspicion_live: "Suspicions actives",
+  at_admin_no_trial: "Aucun procès actif",
 };
 
 const en: typeof fr = {
@@ -309,6 +320,17 @@ const en: typeof fr = {
   at_scratch_memorize: "Memorise it — your role won't be shown again!",
   at_scratch_done: "Start playing 🕵️",
   at_peek_role: "👁️ See my role",
+
+  // ─── Scan & history ─────────────────────────────────────────────────────────
+  at_scan_recorded: "✅ Scan recorded!",
+  at_history_title: "History",
+  at_history_scans: "My scans",
+  at_history_empty: "No activity yet",
+
+  // ─── Admin live panels ───────────────────────────────────────────────────────
+  at_admin_trial_live: "⚖️ Active trial",
+  at_admin_suspicion_live: "Active suspicions",
+  at_admin_no_trial: "No active trial",
 };
 
 export const translations: Record<Lang, typeof fr> = { fr, en };

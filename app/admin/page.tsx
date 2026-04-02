@@ -510,7 +510,7 @@ export default function AdminPage() {
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-2">
               <p className="text-xs text-gray-400 uppercase tracking-widest">Joueurs & rôles</p>
               <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                {state.players.map((p) => (
+                {state.players.slice().sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
                   <div key={p.code} className="flex items-center justify-between text-sm">
                     <span className={p.alive ? "font-medium" : "text-gray-400 line-through"}>
                       {p.name}
@@ -530,6 +530,52 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* — Trial monitoring panel (live, playing only) — */}
+          {state.status === "playing" && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex flex-col gap-2">
+              <p className="text-xs text-yellow-600 uppercase tracking-widest font-bold">{t.at_admin_trial_live}</p>
+              {state.trial && state.trial.phase !== "resolved" ? (
+                <>
+                  <p className="text-sm font-semibold">
+                    Accusé : <strong>{state.players.find((p) => p.code === state.trial!.targetCode)?.name}</strong>
+                  </p>
+                  <p className="text-sm text-yellow-700">
+                    Phase : {state.trial.phase === "defense" ? "Défense" : "Vote"}
+                  </p>
+                  {state.trial.phase === "voting" && (
+                    <p className="text-sm text-yellow-700">
+                      Votes : {Object.keys(state.trial.votes).length} /{" "}
+                      {state.players.filter((p) => p.alive && p.code !== state.trial!.targetCode).length}
+                      {" — "}{Object.values(state.trial.votes).filter((v) => v === "guilty").length} coupable
+                      {" / "} {Object.values(state.trial.votes).filter((v) => v === "innocent").length} innocent
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-yellow-500 italic">{t.at_admin_no_trial}</p>
+              )}
+            </div>
+          )}
+
+          {/* — Suspicion panel (live) — */}
+          {state.status === "playing" &&
+            state.players.some((p) => p.alive && (p.suspicionVoters?.length ?? 0) > 0) && (
+              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex flex-col gap-2">
+                <p className="text-xs text-orange-600 uppercase tracking-widest font-bold">{t.at_admin_suspicion_live}</p>
+                {state.players
+                  .filter((p) => p.alive && (p.suspicionVoters?.length ?? 0) > 0)
+                  .sort((a, b) => (b.suspicionVoters?.length ?? 0) - (a.suspicionVoters?.length ?? 0))
+                  .map((p) => (
+                    <div key={p.code} className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{p.name}</span>
+                      <span className="text-orange-600 font-bold">
+                        {p.suspicionVoters?.filter((v) => !v.startsWith("__ghost_")).length ?? 0} vote(s)
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
@@ -773,7 +819,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {state.players.map((p) => {
+                {state.players.slice().sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
                   const pair = state.pairs.find((pr) => pr.id === p.pairId);
                   const word = pair
                     ? p.half === "A"

@@ -18,6 +18,7 @@ import {
   type GameState,
   type Player,
   type ATGhostActionType,
+  type ATEventEntry,
 } from "@/app/lib/store";
 import { useLang } from "@/app/lib/LangContext";
 import type { Translations } from "@/app/lib/i18n";
@@ -224,6 +225,17 @@ function ATHubInner() {
     }
   }, [room, code]);
 
+  // Show flash when returning from a successful AT scan
+  useEffect(() => {
+    if (searchParams.get("scanned") === "1") {
+      // Use a short delay so flash renders after state loads
+      const id = setTimeout(() => showFlash(t.at_scan_recorded), 400);
+      router.replace(`/at/hub?code=${code}&room=${room}`);
+      return () => clearTimeout(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function markScratchDone() {
     sessionStorage.setItem(`at_scratched_${room}_${code}`, "1");
     setScratchDone(true);
@@ -307,6 +319,19 @@ function ATHubInner() {
   const disruptSecsLeft = Math.max(0, Math.ceil(((state.disruptedUntil ?? 0) - now) / 1000));
   const imAccused = (player.suspicionVoters?.length ?? 0) > 0;
   const amOnTrial = trial?.targetCode === code && trial.phase !== "resolved";
+
+  // Scan cooldown helpers
+  const scanCooldownMs = config.scanCooldownSecs * 1000;
+  function scanSecsLeft(targetCode: string): number {
+    return Math.max(0, Math.ceil(((player!.scanCooldowns?.[targetCode] ?? 0) + scanCooldownMs - now) / 1000));
+  }
+  const anyScanCooldown = alivePlayers.some((p) => scanSecsLeft(p.code) > 0);
+
+  // Event log for this player
+  const myEvents: ATEventEntry[] = (state.eventLog ?? [])
+    .filter((e) => e.actorCode === code || e.targetCode === code)
+    .slice(-15)
+    .reverse();
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -549,10 +574,12 @@ function ATHubInner() {
 
   // ── Alive player view ───────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen flex flex-col gap-6 p-6 max-w-md mx-auto pb-16">
+    <main className="min-h-screen flex flex-col gap-6 p-6 max-w-md mx-auto pb-16 text-gray-900">
       {/* Flash message */}
       {flash && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500 text-white px-5 py-2 rounded-full text-sm font-semibold shadow-lg">
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full text-sm font-semibold shadow-lg text-white ${
+          flash.startsWith("✅") ? "bg-green-500" : "bg-red-500"
+        }`}>
           {flash}
         </div>
       )}
@@ -626,7 +653,11 @@ function ATHubInner() {
         className="flex items-center justify-center gap-2 text-white rounded-xl px-6 py-4 text-lg font-semibold active:scale-95 transition"
         style={{ backgroundColor: accent }}
       >
-        {t.at_scan_btn}
+        {anyScanCooldown ? (
+          <span className="opacity-90">{t.at_scan_btn}</span>
+        ) : (
+          t.at_scan_btn
+        )}
       </Link>
 
       {/* ── Trial overlay ─────────────────────────────────────────────────── */}
@@ -734,8 +765,13 @@ function ATHubInner() {
                   className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3"
                 >
                   <div>
-                    <p className="font-medium text-sm">{p.name}</p>
+                    <p className="font-medium text-sm text-gray-900">{p.name}</p>
                     <div className="flex items-center gap-2 mt-0.5">
+                      {scanSecsLeft(p.code) > 0 && (
+                        <span className="text-xs text-orange-500 font-semibold">
+                          ⏱ {scanSecsLeft(p.code)}s
+                        </span>
+                      )}
                       {totalVotes > 0 && (
                         <div className="flex items-center gap-1">
                           <div className="flex gap-0.5">
@@ -819,6 +855,52 @@ function ATHubInner() {
           ))}
         </div>
       )}
+
+      {/* History */}
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_history_title}</p>
+        {myEvents.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">{t.at_history_empty}</p>
+        ) : (
+          myEvents.map((e) => {
+            const other = state.players.find(
+              (p) => p.code === (e.actorCode === code ? e.targetCode : e.actorCode)
+            );
+            const mins = Math.floor((Date.now() - e.at) / 60000);
+            const timeStr = mins < 1 ? "< 1 min" : `${mins} min`;
+            if (e.type === "scan") {
+              return (
+                <p key={e.id} className="text-sm text-gray-600">
+                  📡 {e.actorCode === code
+                    ? `Vous avez scanné ${other?.name ?? e.targetCode}`
+                    : `${other?.name ?? e.actorCode} vous a scanné`}{" "}
+                  <span className="text-gray-400">— {timeStr}</span>
+                </p>
+              );
+            }
+            if (e.type === "accused") {
+              return (
+                <p key={e.id} className="text-sm text-gray-600">
+                  ⚠️ {e.actorCode === code
+                    ? `Vous avez accusé ${other?.name ?? e.targetCode}`
+                    : `${other?.name ?? e.actorCode} vous a accusé`}{" "}
+                  <span className="text-gray-400">— {timeStr}</span>
+                </p>
+              );
+            }
+            if (e.type === "trial_result") {
+              return (
+                <p key={e.id} className="text-sm text-gray-600">
+                  ⚖️ {other?.name ?? e.targetCode}{" "}
+                  {e.note === "eliminated" ? "éliminé ⚰️" : "acquitté ✅"}{" "}
+                  <span className="text-gray-400">— {timeStr}</span>
+                </p>
+              );
+            }
+            return null;
+          })
+        )}
+      </div>
     </main>
   );
 }

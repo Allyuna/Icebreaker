@@ -21,12 +21,14 @@ import {
   type GameState,
   type Player,
   type ATGhostActionType,
+  type ATEventEntry,
   registerPlayer,
   registerATPlayer,
   queueATMatch,
   processATQueue,
   atAccuse,
   advanceATTrial,
+  resolveATVoting,
   applyATGhostAction,
   DEFAULT_AT_CONFIG,
 } from "./store";
@@ -144,7 +146,18 @@ export async function queueATMatchInRoom(
             : p
         ),
       };
-      tx.set(ref, queueATMatch(stateWithCooldown, scannerCode, scannedCode, now));
+      const scanEvent: ATEventEntry = {
+        id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+        at: now,
+        type: "scan",
+        actorCode: scannerCode,
+        targetCode: scannedCode,
+      };
+      const stateWithEvent = {
+        ...stateWithCooldown,
+        eventLog: [...(stateWithCooldown.eventLog ?? []), scanEvent],
+      };
+      tx.set(ref, queueATMatch(stateWithEvent, scannerCode, scannedCode, now));
     });
     return { success: true };
   } catch (err) {
@@ -199,13 +212,14 @@ export async function accuseATPlayerInRoom(
   }
 }
 
-/** Casts a GUILTY or INNOCENT vote during the trial voting phase. */
+/** Casts a GUILTY or INNOCENT vote during the trial voting phase. Resolves immediately if all eligible players have voted. */
 export async function voteATTrialInRoom(
   roomCode: string,
   voterCode: string,
   verdict: "guilty" | "innocent"
 ): Promise<{ success: boolean; error?: string }> {
   const ref = doc(db, COLLECTION, roomCode);
+  const now = Date.now();
   try {
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
@@ -214,10 +228,15 @@ export async function voteATTrialInRoom(
       if (!state.trial || state.trial.phase !== "voting") throw new Error("not_voting");
       const voter = state.players.find((p) => p.code === voterCode);
       if (!voter?.alive) throw new Error("not_alive");
-      tx.set(ref, {
-        ...state,
-        trial: { ...state.trial, votes: { ...state.trial.votes, [voterCode]: verdict } },
-      });
+      const updatedTrial = { ...state.trial, votes: { ...state.trial.votes, [voterCode]: verdict } };
+      const updatedState = { ...state, trial: updatedTrial };
+      // Resolve immediately if all eligible players (alive, not the defendant) have voted
+      const eligible = state.players.filter((p) => p.alive && p.code !== state.trial!.targetCode);
+      if (Object.keys(updatedTrial.votes).length >= eligible.length) {
+        tx.set(ref, resolveATVoting(updatedState, now));
+      } else {
+        tx.set(ref, updatedState);
+      }
     });
     return { success: true };
   } catch (err) {

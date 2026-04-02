@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { loadRoom } from "@/app/lib/db";
+import { loadRoom, queueATMatchInRoom } from "@/app/lib/db";
 import type { IScannerControls } from "@zxing/browser";
 import { useLang } from "@/app/lib/LangContext";
 
@@ -27,6 +27,7 @@ function FindInner() {
   const [accent, setAccent] = useState("#000000");
   const [gameMode, setGameMode] = useState("its-a-match");
   const [scanning, setScanning] = useState(false);
+  const [atStatus, setAtStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
 
@@ -47,6 +48,21 @@ function FindInner() {
       controlsRef.current?.stop();
     };
   }, []);
+
+  async function handleATScan(targetCode: string) {
+    setAtStatus("loading");
+    setError("");
+    const result = await queueATMatchInRoom(room, myCode, targetCode);
+    if (result.success) {
+      setAtStatus("success");
+      setTimeout(() => router.push(`/at/hub?code=${myCode}&room=${room}&scanned=1`), 1200);
+    } else {
+      setAtStatus("error");
+      if (result.error === "cooldown") setError(t.at_confirm_cooldown);
+      else if (result.error === "player_not_alive") setError(t.at_confirm_dead);
+      else setError(t.find_err_invalid_qr);
+    }
+  }
 
   async function startScanner() {
     setError("");
@@ -72,7 +88,11 @@ function FindInner() {
             setError(t.find_err_self);
             return;
           }
-          router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
+          if (gameMode === "agents-traitors") {
+            handleATScan(code);
+          } else {
+            router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
+          }
         }
       );
       controlsRef.current = controls;
@@ -100,11 +120,27 @@ function FindInner() {
       setError(t.find_err_self);
       return;
     }
-    router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
+    if (gameMode === "agents-traitors") {
+      handleATScan(code);
+    } else {
+      router.push(`/confirm?myCode=${myCode}&theirCode=${code}&room=${room}`);
+    }
   }
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
+      {/* AT mode: success/loading overlay */}
+      {atStatus === "success" && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-green-500 text-white gap-4">
+          <p className="text-7xl">✅</p>
+          <p className="text-2xl font-bold">{t.at_scan_recorded}</p>
+        </div>
+      )}
+      {atStatus === "loading" && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900/80 text-white">
+          <p className="text-2xl font-bold animate-pulse">{t.at_loading}</p>
+        </div>
+      )}
       <div className="text-center">
         <h1 className="text-3xl font-bold">{t.find_title}</h1>
         <p className="text-gray-500 mt-2">{t.find_sub}</p>
