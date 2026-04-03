@@ -36,7 +36,7 @@ export const DEFAULT_AT_CONFIG: ATConfig = {
 };
 
 export type ATGhostActionType =
-  | "agent_boost"      // +3% progress
+  | "agent_boost"      // +N% progress (2x progressPerMatch)
   | "agent_reveal"     // randomly reveal role of an alive player to all
   | "agent_protect"    // shield a player from accusations for 90s
   | "traitor_sabotage" // -3% progress
@@ -115,6 +115,8 @@ export interface Player {
   protectedUntil?: number;
   /** opponentCode → last scan ms timestamp (cooldown tracking). */
   scanCooldowns?: Record<string, number>;
+  /** Ghost action IDs already used this game (for once-per-game powers). */
+  ghostActionsUsed?: string[];
 }
 
 export interface GameState {
@@ -142,6 +144,8 @@ export interface GameState {
   eventLog?: ATEventEntry[];
   /** ms timestamp until scan disruption expires. */
   disruptedUntil?: number;
+  /** Last ghost-triggered progress change — used to animate the bar on all clients. */
+  ghostProgressDelta?: { delta: number; at: number };
   /** Publicly revealed roles (code → role). */
   revealedRoles?: Record<string, ATRole>;
   winnerSide?: "agents" | "traitors" | null;
@@ -563,18 +567,22 @@ export function applyATGhostAction(
 
   switch (type) {
     case "agent_boost": {
-      const progress = Math.min(100, (newState.globalProgress ?? 50) + 3);
+      const boost = (state.atConfig?.progressPerMatch ?? DEFAULT_AT_CONFIG.progressPerMatch) * 2;
+      const progress = Math.min(100, (newState.globalProgress ?? 50) + boost);
       newState = {
         ...newState,
         globalProgress: progress,
         lastMatchAt: now,
+        ghostProgressDelta: { delta: boost, at: now },
         winnerSide: progress >= 100 ? "agents" : (newState.winnerSide ?? null),
       };
-      publicMessage = "👻 Un agent fantôme envoie un signal de renfort ! (+3%)";
+      publicMessage = `\uD83D\uDC7B Un agent fant\u00F4me envoie un signal de renfort ! (+${boost}%)`;
       privateMessage = `👻 Tu as renforcé le réseau. Progression : ${progress}%`;
       break;
     }
     case "agent_reveal": {
+      // Once per game per ghost
+      if (actor.ghostActionsUsed?.includes("agent_reveal")) return state;
       const unrevealed = state.players.filter(
         (p) => p.alive && !(state.revealedRoles ?? {})[p.code]
       );
@@ -601,13 +609,16 @@ export function applyATGhostAction(
       break;
     }
     case "traitor_sabotage": {
-      const progress = Math.max(0, (newState.globalProgress ?? 50) - 3);
+      const drop = (state.atConfig?.progressPerMatch ?? DEFAULT_AT_CONFIG.progressPerMatch) * 2;
+      const progress = Math.max(0, (newState.globalProgress ?? 50) - drop);
       newState = {
         ...newState,
         globalProgress: progress,
+        lastMatchAt: now,
+        ghostProgressDelta: { delta: -drop, at: now },
         winnerSide: progress <= 0 ? "traitors" : (newState.winnerSide ?? null),
       };
-      publicMessage = "💣 Un traître fantôme sabote le réseau ! (-3%)";
+      publicMessage = `💣 Un traître fantôme sabote le réseau ! (-${drop}%)`;
       privateMessage = `💣 Tu as saboté le réseau. Progression : ${progress}%`;
       break;
     }
@@ -637,9 +648,9 @@ export function applyATGhostAction(
       break;
     }
     case "traitor_disrupt": {
-      newState = { ...newState, disruptedUntil: now + 45_000 };
-      publicMessage = "📡 Les connexions sont brouillées ! Les scans sont perturbés pendant 45 secondes.";
-      privateMessage = "📡 Tu as brouillé le réseau. Les scans sont bloqués pendant 45 secondes.";
+      newState = { ...newState, disruptedUntil: now + 20_000 };
+      publicMessage = "📡 Les connexions sont brouillées ! Les scans sont bloqués pendant 20 secondes.";
+      privateMessage = "📡 Tu as brouillé le réseau. Les scans sont bloqués pendant 20 secondes.";
       break;
     }
   }
@@ -647,7 +658,15 @@ export function applyATGhostAction(
   newState = {
     ...newState,
     players: newState.players.map((p) =>
-      p.code === actorCode ? { ...p, lastGhostActionAt: now } : p
+      p.code === actorCode
+        ? {
+            ...p,
+            lastGhostActionAt: now,
+            ghostActionsUsed: type === "agent_reveal"
+              ? [...new Set([...(p.ghostActionsUsed ?? []), "agent_reveal"])]
+              : (p.ghostActionsUsed ?? []),
+          }
+        : p
     ),
     ghostLog: [
       ...(newState.ghostLog ?? []),

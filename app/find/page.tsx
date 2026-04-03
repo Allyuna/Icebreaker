@@ -60,6 +60,7 @@ function FindInner() {
       setAtStatus("error");
       if (result.error === "cooldown") setError(t.at_confirm_cooldown);
       else if (result.error === "player_not_alive") setError(t.at_confirm_dead);
+      else if (result.error === "disrupted") setError(t.at_disrupted_scan_fail);
       else setError(t.find_err_invalid_qr);
     }
   }

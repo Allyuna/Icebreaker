@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
@@ -216,6 +216,38 @@ function ATHubInner() {
   const [ghostTarget, setGhostTarget] = useState<string | null>(null);
   const [loading, setLoading] = useState("");
   const [flash, setFlash] = useState("");
+  const [progressFlash, setProgressFlash] = useState<{ delta: number } | null>(null);
+
+  // Refs for trial sound
+  const prevTrialPhaseRef = useRef<string | null | undefined>(undefined);
+
+  // Play an alert sound when a trial starts
+  const playTrialSound = useCallback(() => {
+    try {
+      const ctx = new AudioContext();
+      const notes = [
+        { freq: 660, delay: 0 },
+        { freq: 550, delay: 0.2 },
+        { freq: 440, delay: 0.4 },
+        { freq: 550, delay: 0.65 },
+        { freq: 660, delay: 0.85 },
+      ];
+      notes.forEach(({ freq, delay }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "triangle";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.5, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.22);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.25);
+      });
+    } catch {
+      // AudioContext unavailable
+    }
+  }, []);
 
   // Check sessionStorage to skip scratch card if already done this session
   useEffect(() => {
@@ -269,6 +301,27 @@ function ATHubInner() {
     const interval = setInterval(() => { tickATRoom(room); }, 2000);
     return () => clearInterval(interval);
   }, [room]);
+
+  // Trial sound: play when trial phase becomes "defense"
+  useEffect(() => {
+    const phase = state?.trial?.phase;
+    if (phase === "defense" && prevTrialPhaseRef.current !== "defense") {
+      playTrialSound();
+    }
+    prevTrialPhaseRef.current = phase ?? null;
+  }, [state?.trial?.phase, playTrialSound]);
+
+  // Progress flash: animate on ghost boost/sabotage
+  useEffect(() => {
+    const delta = state?.ghostProgressDelta;
+    if (!delta) return;
+    if (Date.now() - delta.at < 6000) {
+      setProgressFlash({ delta: delta.delta });
+      const id = setTimeout(() => setProgressFlash(null), 2500);
+      return () => clearTimeout(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.ghostProgressDelta?.at]);
 
   // Redirect to join page if room becomes "finished"
   useEffect(() => {
@@ -484,21 +537,25 @@ function ATHubInner() {
 
           {/* Action selector */}
           <div className="flex flex-col gap-2">
-            {availableActions.map((a) => (
-              <button
-                key={a}
-                onClick={() => { setGhostAction(a); setGhostTarget(null); }}
-                disabled={!ghostReady}
-                className={`rounded-xl py-3 px-4 text-sm font-semibold text-left transition active:scale-95 ${
-                  ghostAction === a
-                    ? "ring-2 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                } disabled:opacity-40`}
-                style={ghostAction === a ? { backgroundColor: accent } : {}}
-              >
-                {actionLabels[a]}
-              </button>
-            ))}
+            {availableActions.map((a) => {
+              const revealUsed = a === "agent_reveal" && (player?.ghostActionsUsed?.includes("agent_reveal") ?? false);
+              return (
+                <button
+                  key={a}
+                  onClick={() => { if (!revealUsed) { setGhostAction(a); setGhostTarget(null); } }}
+                  disabled={!ghostReady || revealUsed}
+                  className={`rounded-xl py-3 px-4 text-sm font-semibold text-left transition active:scale-95 ${
+                    ghostAction === a
+                      ? "ring-2 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  } disabled:opacity-40`}
+                  style={ghostAction === a ? { backgroundColor: accent } : {}}
+                >
+                  {actionLabels[a]}
+                  {revealUsed && <span className="ml-2 text-xs opacity-60">{t.at_ghost_reveal_used}</span>}
+                </button>
+              );
+            })}
           </div>
 
           {/* Target selection for actions that need it */}
@@ -629,7 +686,16 @@ function ATHubInner() {
       {/* Progress bar */}
       <div className="flex flex-col gap-2">
         <p className="text-xs text-gray-400 uppercase tracking-widest">{t.at_progress_label}</p>
-        <ProgressBar value={visualProgress} />
+        <div className="relative">
+          <ProgressBar value={visualProgress} />
+          {progressFlash && (
+            <span className={`absolute -top-6 right-0 text-sm font-black animate-bounce ${
+              progressFlash.delta > 0 ? "text-green-600" : "text-red-600"
+            }`}>
+              {progressFlash.delta > 0 ? `↑ +${progressFlash.delta}%` : `↓ ${progressFlash.delta}%`}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-gray-400 text-center">{t.at_progress_target}</p>
       </div>
 
@@ -660,34 +726,42 @@ function ATHubInner() {
         )}
       </Link>
 
-      {/* ── Trial overlay ─────────────────────────────────────────────────── */}
+      {/* ── Trial fullscreen overlay ──────────────────────────────────────── */}
       {trial && trial.phase !== "resolved" && (
-        <div className="border-2 border-yellow-400 rounded-2xl p-5 flex flex-col gap-4 bg-yellow-50">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-yellow-800">{t.at_trial_banner}</h2>
-            <span className="text-2xl font-mono font-bold text-yellow-700">{trialSecsLeft}s</span>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-yellow-50 px-6 gap-6">
+          {/* Header */}
+          <div className="flex flex-col items-center gap-2 text-center">
+            <span className="text-5xl">⚖️</span>
+            <h1 className="text-3xl font-black text-yellow-800">{t.at_trial_banner}</h1>
+            <span className="text-4xl font-mono font-bold text-yellow-700">{trialSecsLeft}s</span>
           </div>
-          <p className="text-sm text-yellow-700">
-            {t.at_trial_defendant}{" "}
-            <span className="font-bold">{trialTarget?.name}</span>
-          </p>
 
-          {trial.phase === "defense" && (
-            <>
-              <p className="text-sm text-yellow-600 font-semibold">{t.at_trial_defense_phase}</p>
-              {amOnTrial && (
-                <p className="text-sm bg-yellow-100 rounded-lg p-3 text-yellow-800">
-                  {t.at_trial_defense_hint}
-                </p>
-              )}
-            </>
+          {/* Defendant card */}
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg p-6 flex flex-col items-center gap-3 border-2 border-yellow-300">
+            <p className="text-sm text-yellow-600 font-semibold uppercase tracking-widest">{t.at_trial_defendant}</p>
+            <p className="text-2xl font-black text-gray-900">{trialTarget?.name}</p>
+          </div>
+
+          {/* Role card: defendant vs listener */}
+          {amOnTrial ? (
+            <div className="w-full max-w-sm bg-red-50 border-2 border-red-300 rounded-2xl p-5 flex flex-col items-center gap-2 text-center">
+              <span className="text-3xl">🎤</span>
+              <p className="text-lg font-bold text-red-700">{t.at_trial_defense_phase}</p>
+              <p className="text-sm text-red-600">{t.at_trial_defense_hint}</p>
+            </div>
+          ) : (
+            <div className="w-full max-w-sm bg-blue-50 border-2 border-blue-200 rounded-2xl p-5 flex flex-col items-center gap-2 text-center">
+              <span className="text-3xl">🤫</span>
+              <p className="text-base font-bold text-blue-700">{t.at_trial_listen} <span className="font-black">{trialTarget?.name}</span></p>
+            </div>
           )}
 
+          {/* Voting phase */}
           {trial.phase === "voting" && (
-            <>
-              <p className="text-sm font-bold text-yellow-700">{t.at_trial_voting_phase}</p>
+            <div className="w-full max-w-sm flex flex-col gap-4">
+              <p className="text-center text-sm font-bold text-yellow-700">{t.at_trial_voting_phase}</p>
               {myVote ? (
-                <p className="text-sm text-center">
+                <p className="text-sm text-center text-yellow-600">
                   {t.at_my_vote}{" "}
                   <span className="font-bold">
                     {myVote === "guilty" ? t.at_vote_guilty : t.at_vote_innocent}
@@ -699,14 +773,14 @@ function ATHubInner() {
                     <button
                       onClick={() => handleVote("guilty")}
                       disabled={loading === "vote"}
-                      className="flex-1 bg-red-500 text-white rounded-xl py-3 font-bold active:scale-95 transition disabled:opacity-50"
+                      className="flex-1 bg-red-500 text-white rounded-xl py-4 font-bold text-lg active:scale-95 transition disabled:opacity-50"
                     >
                       {t.at_vote_guilty}
                     </button>
                     <button
                       onClick={() => handleVote("innocent")}
                       disabled={loading === "vote"}
-                      className="flex-1 bg-green-500 text-white rounded-xl py-3 font-bold active:scale-95 transition disabled:opacity-50"
+                      className="flex-1 bg-green-500 text-white rounded-xl py-4 font-bold text-lg active:scale-95 transition disabled:opacity-50"
                     >
                       {t.at_vote_innocent}
                     </button>
@@ -716,7 +790,7 @@ function ATHubInner() {
               <p className="text-xs text-yellow-500 text-center">
                 {Object.keys(trial.votes).length} vote(s) enregistré(s)
               </p>
-            </>
+            </div>
           )}
         </div>
       )}

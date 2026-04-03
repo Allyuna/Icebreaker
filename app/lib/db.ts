@@ -134,6 +134,8 @@ export async function queueATMatchInRoom(
       const scanner = state.players.find((p) => p.code === scannerCode);
       const scanned = state.players.find((p) => p.code === scannedCode);
       if (!scanner?.alive || !scanned?.alive) throw new Error("player_not_alive");
+      // Block scans during disruption
+      if ((state.disruptedUntil ?? 0) > now) throw new Error("disrupted");
       const cooldownMs =
         (state.atConfig?.scanCooldownSecs ?? DEFAULT_AT_CONFIG.scanCooldownSecs) * 1000;
       if (now - (scanner.scanCooldowns?.[scannedCode] ?? 0) < cooldownMs)
